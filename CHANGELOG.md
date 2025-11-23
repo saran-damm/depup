@@ -23,6 +23,11 @@ The format follows **Semantic Versioning**: https://semver.org/
 - MIT License
 - Initial README for PyPI & GitHub
 
+## [0.1.1] - 2025-11-24
+### Changed
+- Updated README formatting/rendering for PyPI
+
+
 ---
 
 ## [Unreleased]
