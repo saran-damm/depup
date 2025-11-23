@@ -6,25 +6,18 @@ This module is responsible for parsing supported dependency files:
 - pyproject.toml (PEP 621 or Poetry-style)
 - Pipfile
 
-It normalizes all dependencies into a common structure:
-    List[DependencySpec] (dataclass)
-
-This module does **not** check PyPI versions. It only extracts declared versions
-from the project's dependency files.
-
-Future-ready:
-- Additional file formats can be added easily (e.g., conda environment.yml)
+It normalizes all dependencies into a common structure: DependencySpec.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
-import tomllib  # Python 3.11+, falls back via pyproject later
-import re
+import tomllib  # Python 3.11+
 
 from depup.core.exceptions import InvalidDependencyFileError
 
@@ -37,10 +30,11 @@ class DependencySpec:
     Represents a single declared dependency in the project.
 
     Attributes:
-        name: Package name (normalized)
-        version: Version specifier string (may be None)
-        source_file: Path to the file where it was declared
+        name: Package name (normalized).
+        version: Version specifier string (may be None).
+        source_file: Path to the file where it was declared.
     """
+
     name: str
     version: Optional[str]
     source_file: Path
@@ -51,14 +45,13 @@ class DependencyParser:
     Main entrypoint for parsing project dependency files.
 
     Usage:
-    -------
-    parser = DependencyParser(project_root=Path("."))
-    deps = parser.parse_all()
+        parser = DependencyParser(project_root=Path("."))
+        deps = parser.parse_all()
     """
 
     SUPPORTED_FILES = ["requirements.txt", "pyproject.toml", "Pipfile"]
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path) -> None:
         self.project_root = project_root
 
     def parse_all(self) -> List[DependencySpec]:
@@ -66,20 +59,29 @@ class DependencyParser:
         Parse all supported dependency files found in the project root.
         """
         results: List[DependencySpec] = []
-        logger.debug("Scanning project root for dependency files...")
+        logger.debug("Scanning project root for dependency files in %s", self.project_root)
 
         for file_name in self.SUPPORTED_FILES:
             file_path = self.project_root / file_name
             if file_path.exists():
-                logger.info(f"Parsing dependency file: {file_path}")
-                results.extend(self._parse_file(file_path))
+                logger.info("Parsing dependency file: %s", file_path)
+                parsed = self._parse_file(file_path)
+                # Defensive: avoid None causing TypeError in extend
+                if parsed is None:
+                    raise InvalidDependencyFileError(
+                        f"Parser for {file_path} returned no data (None)."
+                    )
+                results.extend(parsed)
 
         return results
 
-    # -------------------------------
+    # ---------------------------------------------------------------------
     # File dispatching
-    # -------------------------------
+    # ---------------------------------------------------------------------
     def _parse_file(self, file_path: Path) -> List[DependencySpec]:
+        """
+        Dispatch to the appropriate parser based on file name.
+        """
         if file_path.name == "requirements.txt":
             return self._parse_requirements(file_path)
 
@@ -91,22 +93,30 @@ class DependencyParser:
 
         raise InvalidDependencyFileError(f"Unsupported file format: {file_path}")
 
-    # -------------------------------
+    # ---------------------------------------------------------------------
     # requirements.txt
-    # -------------------------------
+    # ---------------------------------------------------------------------
     def _parse_requirements(self, path: Path) -> List[DependencySpec]:
-        deps: List[DependencySpec] = []
-        pattern = re.compile(r"^([a-zA-Z0-9_\-]+)([<>=!~].+)?$")
+        """
+        Parse a requirements.txt style file.
 
-        for line in path.read_text().splitlines():
-            line = line.strip()
+        Supports lines like:
+            requests==2.31.0
+            numpy>=1.20
+        Ignores comments and blank lines.
+        """
+        deps: List[DependencySpec] = []
+        pattern = re.compile(r"^([a-zA-Z0-9_\-]+)\s*([<>=!~].+)?$")
+
+        for raw_line in path.read_text().splitlines():
+            line = raw_line.strip()
 
             if not line or line.startswith("#"):
                 continue
 
             match = pattern.match(line)
             if not match:
-                logger.warning(f"Skipping unrecognized requirement line: {line}")
+                logger.warning("Skipping unrecognized requirement line: %s", line)
                 continue
 
             name, version = match.group(1), match.group(2)
@@ -114,10 +124,17 @@ class DependencyParser:
 
         return deps
 
-    # -------------------------------
+    # ---------------------------------------------------------------------
     # pyproject.toml
-    # -------------------------------
+    # ---------------------------------------------------------------------
     def _parse_pyproject(self, path: Path) -> List[DependencySpec]:
+        """
+        Parse a pyproject.toml file.
+
+        Supports:
+        - [project] dependencies (PEP 621)
+        - [tool.poetry.dependencies] (Poetry-style)
+        """
         data = tomllib.loads(path.read_text())
         deps: List[DependencySpec] = []
 
@@ -135,6 +152,51 @@ class DependencyParser:
             .get("dependencies", {})
         )
 
-        for name, version in poetry_section.items():
-            if name.lower() == "python":
-                continue  # not a depe
+        if poetry_section:
+            for name, version in poetry_section.items():
+                if name.lower() == "python":
+                    continue  # not a package dependency
+                deps.append(
+                    DependencySpec(name=name, version=str(version), source_file=path)
+                )
+
+        return deps
+
+    def _split_pep621_dependency(self, dep: str) -> tuple[str, Optional[str]]:
+        """
+        Split a PEP 621 dependency string.
+
+        Examples:
+            "requests>=2.0" -> ("requests", ">=2.0")
+            "numpy"         -> ("numpy", None)
+        """
+        if any(op in dep for op in (">=", "<=", "==", "!=", "<", ">", "~=")):
+            parts = re.split(r"([<>=!~!].+)", dep, maxsplit=1)
+            name = parts[0]
+            version = parts[1] if len(parts) > 1 else None
+            return name, version
+
+        return dep, None
+
+    # ---------------------------------------------------------------------
+    # Pipfile
+    # ---------------------------------------------------------------------
+    def _parse_pipfile(self, path: Path) -> List[DependencySpec]:
+        """
+        Parse a Pipfile (TOML).
+
+        Supports:
+            [packages]
+            [dev-packages]
+        """
+        data = tomllib.loads(path.read_text())
+        deps: List[DependencySpec] = []
+
+        for section_name in ("packages", "dev-packages"):
+            section = data.get(section_name, {})
+            for name, version in section.items():
+                deps.append(
+                    DependencySpec(name=name, version=str(version), source_file=path)
+                )
+
+        return deps

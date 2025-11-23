@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "typer>=0.12",
     "packaging>=24.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
