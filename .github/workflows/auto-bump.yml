@@ -1,0 +1,45 @@
+name: Auto Version Bump
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install uv + bump2version
+        run: |
+          pip install uv
+          uv pip install bump2version
+
+      - name: Determine bump type
+        id: bump_type
+        run: |
+          if gh pr view ${{ github.event.pull_request.number }} --json labels | grep -q '"feature"'; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+          elif gh pr view ${{ github.event.pull_request.number }} --json labels | grep -q '"breaking-change"'; then
+            echo "type=major" >> $GITHUB_OUTPUT
+          else
+            echo "type=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run version bump
+        run: bump2version ${{ steps.bump_type.outputs.type }}
+
+      - name: Push version bump commit + tag
+        run: |
+          git push --follow-tags
