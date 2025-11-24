@@ -4,6 +4,8 @@
 ![Python Versions](https://img.shields.io/pypi/pyversions/depup.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 [![Docs](https://img.shields.io/badge/docs-coming--soon-blue)](https://example.com)
+![CI](https://github.com/saran-damm/depup/actions/workflows/ci.yml/badge.svg)
+![Publish](https://github.com/saran-damm/depup/actions/workflows/publish.yml/badge.svg)
 
 **Depup** is a modern Python CLI tool that helps developers keep their project dependencies up-to-date, safe, and maintainable. It automatically:
 
@@ -107,6 +109,18 @@ pyproject.toml
 README.md
 CHANGELOG.md
 LICENSE
+```
+
+---
+
+## 🔖 Version Management
+
+We use **bump2version** to automate versioning:
+
+```bash
+bump2version patch  # 0.1.1 → 0.1.2
+bump2version minor  # 0.1.1 → 0.2.0
+bump2version major  # 0.1.1 → 1.0.0
 ```
 
 ---
