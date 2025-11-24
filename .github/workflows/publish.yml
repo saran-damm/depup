@@ -2,13 +2,12 @@ name: Publish to PyPI
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
   release:
     types: [created]
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,13 +22,10 @@ jobs:
       - name: Install uv
         run: pip install uv
 
-      - name: Install build system
-        run: uv pip install --system build
-
       - name: Build package
         run: uv build
 
-      - name: Publish to TestPyPI on push to main
+      - name: Publish to TestPyPI on main branch
         if: github.event_name == 'push'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
