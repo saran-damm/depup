@@ -1,8 +1,9 @@
 name: Upload Python Package
 
 on:
-  release:
-    types: [created]  # fire immediately when the release is created
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   id-token: write       # required for PyPI trusted publishing
