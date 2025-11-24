@@ -1,39 +1,46 @@
-name: Publish to PyPI
+name: Publish
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
   release:
-    types: [created]
+    types:
+      - created
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
 
-      - name: Install uv
-        run: pip install uv
+    - name: Install uv
+      run: pip install uv
 
-      - name: Build package
-        run: uv build
+    - name: Install build system
+      run: uv pip install --system build twine
 
-      - name: Publish to TestPyPI on main branch
-        if: github.event_name == 'push'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+    - name: Build package
+      run: uv build
 
-      - name: Publish to PyPI on Release
-        if: github.event_name == 'release'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+    - name: Publish to TestPyPI on push to main
+      if: github.event_name == 'push'
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        user: __token__
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+    - name: Publish to PyPI on release
+      if: github.event_name == 'release'
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_API_TOKEN }}

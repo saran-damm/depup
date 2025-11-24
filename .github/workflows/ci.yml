@@ -10,31 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
 
-      - name: Install uv
-        run: pip install uv
+    - name: Install uv
+      run: pip install uv
 
-      - name: Create virtual environment
-        run: uv venv
+    - name: Install project + dev dependencies
+      run: uv pip install --system ".[dev]"
 
-      - name: Activate virtual environment
-        run: source .venv/bin/activate
+    - name: Run tests
+      run: pytest -q
 
-      - name: Install project with dev dependencies
-        run: uv pip install ".[dev]"
+    - name: Run ruff
+      run: ruff check .
 
-      - name: Run tests
-        run: pytest -q
-
-      - name: Run ruff
-        run: ruff check .
-
-      - name: Run mypy
-        run: mypy src/depup
+    - name: Run mypy
+      run: mypy src/depup
