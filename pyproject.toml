@@ -22,9 +22,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "typer>=0.12",
-    "packaging>=24.0",
-    "rich>=13.0",
+    "typer==0.20.0",
+    "packaging==25.0",
+    "rich==14.2.0",
+    "tomli-w==1.2.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+    "bump2version"
 ]
 
 [project.scripts]
