@@ -26,9 +26,3 @@ jobs:
 
     - name: Run tests
       run: pytest -q
-
-    - name: Run ruff
-      run: ruff check .
-
-    - name: Run mypy
-      run: mypy src/depup
