@@ -21,14 +21,8 @@ jobs:
       - name: Install uv
         run: pip install uv
 
-      - name: Create virtual environment
-        run: uv venv
-
-      - name: Activate virtual environment
-        run: source .venv/bin/activate
-
-      - name: Install project with dev dependencies
-        run: uv pip install ".[dev]"
+      - name: Install project (system-wide)
+        run: uv pip install --system ".[dev]"
 
       - name: Run tests
         run: pytest -q

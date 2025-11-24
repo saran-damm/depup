@@ -10,20 +10,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install mkdocs
+      - name: Install uv and mkdocs
         run: |
           pip install uv
-          uv pip install mkdocs mkdocs-material
+          uv pip install --system mkdocs mkdocs-material
 
-      - name: Build docs
+      - name: Build documentation
         run: mkdocs build
 
       - name: Deploy to GitHub Pages
