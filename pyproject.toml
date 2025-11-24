@@ -33,8 +33,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
     "ruff",
-    "mypy",
-    "bump2version"
+    "mypy"
 ]
 
 [project.scripts]
