@@ -13,3 +13,4 @@ __pycache__/
 coverage.xml
 htmlcov/
 .pytest_cache/
+dist/
