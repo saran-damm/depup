@@ -1,0 +1,13 @@
+site_name: depup Documentation
+repo_url: https://github.com/saran-damm/depup
+theme:
+  name: material
+
+nav:
+  - Home: index.md
+  - Installation: install.md
+  - CLI Usage: cli.md
+  - API Reference:
+      - Parser: api/parser.md
+      - Version Scanner: api/scanner.md
+      - Upgrade Executor: api/upgrade.md
