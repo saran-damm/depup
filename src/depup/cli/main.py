@@ -1,20 +1,23 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from depup.utils.logging_config import configure_logging
 from depup.core.parser import DependencyParser
 from depup.core.version_scanner import VersionScanner, VersionScannerError
-from depup.utils.logging_config import configure_logging
+from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
 
 app = typer.Typer(help="Dependency Upgrade Advisor CLI")
 console = Console()
 
 
 @app.callback()
-def main(
+def main_callback(
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -22,88 +25,184 @@ def main(
         help="Enable verbose logging",
     ),
 ) -> None:
-    """
-    Entry point for the depup CLI.
-    """
+    """Main entry point."""
     configure_logging(verbose=verbose)
 
 
+# ---------------------------------------------------------------------
+# SCAN COMMAND
+# ---------------------------------------------------------------------
 @app.command("scan")
-def scan(
+def scan_command(
     path: Optional[Path] = typer.Argument(
         None,
-        dir_okay=True,
-        readable=True,
         help="Project root directory (defaults to current working directory).",
     ),
     latest: bool = typer.Option(
         False,
         "--latest",
-        help="Lookup latest versions on PyPI and show update type.",
+        help="Lookup latest versions on PyPI and classify update types.",
     ),
 ) -> None:
-    """
-    Scan the project dependency files and list discovered dependencies.
-
-    Use --latest to also query PyPI for the latest available versions and
-    classify each update as patch/minor/major/none.
-    """
+    """Scan dependency files and optionally check for new versions."""
     project_root = path or Path.cwd()
 
     parser = DependencyParser(project_root)
     deps = parser.parse_all()
 
     if not deps:
-        console.print(
-            "[yellow]No dependency files found or no dependencies parsed.[/yellow]"
-        )
+        console.print("[yellow]No dependency files found or parsed.[/yellow]")
         raise typer.Exit(0)
 
-    version_info_by_name = {}
-
+    # ------------------- latest mode -------------------
     if latest:
         scanner = VersionScanner()
         try:
             infos = scanner.scan(deps)
         except VersionScannerError as exc:
             console.print(f"[red]Failed to scan versions: {exc}[/red]")
-            raise typer.Exit(code=1)
+            raise typer.Exit(1)
 
-        # Index by lowercase package name
-        version_info_by_name = {info.name.lower(): info for info in infos}
+        info_by_name = {i.name.lower(): i for i in infos}
 
         table = Table(title="Declared Dependencies (with latest versions)")
-        table.add_column("Package Name", style="cyan")
+        table.add_column("Package", style="cyan")
         table.add_column("Declared Spec", style="green")
         table.add_column("Latest Version", style="yellow")
         table.add_column("Update Type", style="red")
         table.add_column("Source File", style="magenta")
 
         for dep in deps:
-            info = version_info_by_name.get(dep.name.lower())
-            latest_version = info.latest if info else ""
-            update_type = info.update_type if info else "none"
-            declared = dep.version or ""
+            info = info_by_name.get(dep.name.lower())
             table.add_row(
                 dep.name,
-                declared,
-                latest_version,
-                update_type,
+                dep.version or "",
+                info.latest if info else "",
+                info.update_type if info else "none",
                 dep.source_file.name,
             )
 
-    else:
-        table = Table(title="Declared Dependencies")
-        table.add_column("Package Name", style="cyan")
-        table.add_column("Version Spec", style="green")
-        table.add_column("Source File", style="magenta")
+        console.print(table)
+        return
 
-        for dep in deps:
-            version_spec = dep.version or ""
-            table.add_row(
-                dep.name,
-                version_spec,
-                dep.source_file.name,
-            )
+    # ------------------- normal mode -------------------
+    table = Table(title="Declared Dependencies")
+    table.add_column("Package", style="cyan")
+    table.add_column("Version Spec", style="green")
+    table.add_column("Source File", style="magenta")
+
+    for dep in deps:
+        table.add_row(dep.name, dep.version or "", dep.source_file.name)
 
     console.print(table)
+
+
+# ---------------------------------------------------------------------
+# UPGRADE COMMAND
+# ---------------------------------------------------------------------
+@app.command("upgrade")
+def upgrade_command(
+    path: Optional[Path] = typer.Argument(
+        None,
+        help="Project root directory (defaults to current working directory).",
+    ),
+    only_patch: bool = typer.Option(False, "--only-patch"),
+    only_minor: bool = typer.Option(False, "--only-minor"),
+    only_major: bool = typer.Option(False, "--only-major"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+    packages: Optional[List[str]] = typer.Argument(None),
+):
+    """Upgrade outdated dependencies."""
+    project_root = path or Path.cwd()
+
+    parser = DependencyParser(project_root)
+    deps = parser.parse_all()
+
+    if not deps:
+        console.print("[yellow]No dependencies found to upgrade.[/yellow]")
+        raise typer.Exit(0)
+
+    scanner = VersionScanner()
+    try:
+        infos = scanner.scan(deps)
+    except VersionScannerError as exc:
+        console.print(f"[red]Failed to scan versions: {exc}[/red]")
+        raise typer.Exit(1)
+
+    pkg_filter = {p.lower() for p in packages} if packages else None
+
+    def selected(info) -> bool:
+        if info.update_type == "none":
+            return False
+        if pkg_filter and info.name.lower() not in pkg_filter:
+            return False
+        if only_patch and info.update_type != "patch":
+            return False
+        if only_minor and info.update_type != "minor":
+            return False
+        if only_major and info.update_type != "major":
+            return False
+        return True
+
+    selected_infos = [i for i in infos if selected(i)]
+
+    if not selected_infos:
+        console.print("[green]No matching upgrades found.[/green]")
+        raise typer.Exit(0)
+
+    # Build upgrade plan
+    plans: List[PlannedUpgrade] = []
+    for info in selected_infos:
+        dep_spec = next((d for d in deps if d.name.lower() == info.name.lower()), None)
+        source_file = dep_spec.source_file if dep_spec else project_root / "requirements.txt"
+        plans.append(
+            PlannedUpgrade(
+                name=info.name,
+                current_spec=dep_spec.version if dep_spec else None,
+                target_version=info.latest,
+                source_file=source_file,
+            )
+        )
+
+    # Show upgrade table
+    table = Table(title="Planned Upgrades (dry-run)" if dry_run else "Planned Upgrades")
+    table.add_column("Package")
+    table.add_column("Current")
+    table.add_column("Target")
+    table.add_column("Update Type")
+    table.add_column("Source File")
+
+    info_by_name = {i.name.lower(): i for i in selected_infos}
+
+    for plan in plans:
+        info = info_by_name.get(plan.name.lower())
+        table.add_row(
+            plan.name,
+            plan.current_spec or "",
+            plan.target_version,
+            info.update_type if info else "",
+            plan.source_file.name,
+        )
+
+    console.print(table)
+
+    if not dry_run and not yes:
+        if not typer.confirm("Proceed with these upgrades?"):
+            console.print("[yellow]Aborted by user.[/yellow]")
+            raise typer.Exit(0)
+
+    executor = UpgradeExecutor(project_root, deps)
+    results = executor.execute(plans, dry_run=dry_run)
+
+    succeeded = [r for r in results if r.success]
+    failed = [r for r in results if not r.success]
+
+    console.print()
+    console.print(
+        f"[green]Upgrades succeeded: {len(succeeded)}[/green], "
+        f"[red]Failed: {len(failed)}[/red]"
+    )
+
+    for r in failed:
+        console.print(f"[red]- {r.name}: {r.error}[/red]")
