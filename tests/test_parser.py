@@ -1,8 +1,8 @@
 import tempfile
 from pathlib import Path
 
-from depup.core.parser import DependencyParser, DependencySpec
 from depup.core.exceptions import InvalidDependencyFileError
+from depup.core.parser import DependencyParser
 
 
 def write(path: Path, content: str):

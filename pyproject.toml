@@ -44,10 +44,8 @@ depup = "depup.cli.main:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.ruff]
-line-length = 88
+[tool.ruff.lint]
 select = ["E", "F", "I"]
-target-version = "py311"
 
 [tool.mypy]
 python_version = "3.11"

@@ -17,10 +17,10 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional
 
-from packaging.version import Version, InvalidVersion
+from packaging.version import InvalidVersion, Version
 
-from depup.core.parser import DependencySpec
 from depup.core.exceptions import DepupError
+from depup.core.parser import DependencySpec
 
 logger = logging.getLogger(__name__)
 

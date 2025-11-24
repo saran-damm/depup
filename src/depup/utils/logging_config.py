@@ -1,5 +1,6 @@
 import logging
 
+
 def configure_logging(verbose: bool = False) -> None:
     """
     Configure logging for the entire depup application.

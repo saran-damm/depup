@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import logging
 import re
+import tomllib  # Python 3.11+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
-
-import tomllib  # Python 3.11+
 
 from depup.core.exceptions import InvalidDependencyFileError
 
@@ -59,7 +58,10 @@ class DependencyParser:
         Parse all supported dependency files found in the project root.
         """
         results: List[DependencySpec] = []
-        logger.debug("Scanning project root for dependency files in %s", self.project_root)
+        logger.debug(
+            "Scanning project root for dependency files in %s",
+            self.project_root,
+        )
 
         for file_name in self.SUPPORTED_FILES:
             file_path = self.project_root / file_name
@@ -143,7 +145,13 @@ class DependencyParser:
         if project_section and "dependencies" in project_section:
             for item in project_section["dependencies"]:
                 name, version = self._split_pep621_dependency(item)
-                deps.append(DependencySpec(name=name, version=version, source_file=path))
+                deps.append(
+                    DependencySpec(
+                        name=name,
+                        version=version,
+                        source_file=path,
+                    )
+                )
 
         # Poetry: [tool.poetry.dependencies]
         poetry_section = (

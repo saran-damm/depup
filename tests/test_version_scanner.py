@@ -1,8 +1,7 @@
-import subprocess
 from unittest.mock import patch
 
-from depup.core.version_scanner import VersionScanner, VersionInfo
 from depup.core.parser import DependencySpec
+from depup.core.version_scanner import VersionScanner
 
 
 def fake_pip_output(package: str):
