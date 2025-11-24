@@ -13,7 +13,8 @@ on:
     types: [published]
 
 permissions:
-  contents: read
+  id-token: write
+  contents: write
 
 jobs:
   release-build:
@@ -70,3 +71,13 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+      - name: Update pyproject version after publish
+        run: |
+          pip install bump-my-version
+          VERSION="${GITHUB_REF_NAME#v}"
+          bump-my-version set ${VERSION}
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add pyproject.toml
+          git commit -m "bump: version $VERSION [skip ci]"
+          git push
