@@ -27,6 +27,12 @@ jobs:
           VERSION="${TAG#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Parsed version: $VERSION"
+      
+      - name: Switch to main branch
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull
 
       - name: Update version in pyproject.toml
         run: |
@@ -35,7 +41,7 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git add pyproject.toml
           git commit -m "chore(release): set version ${{ steps.version.outputs.version }} [skip ci]"
-          git push
+          git push origin main
 
       - name: Set up Python
         uses: actions/setup-python@v5
