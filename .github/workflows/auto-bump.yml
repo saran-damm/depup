@@ -2,42 +2,52 @@ name: Auto Version Bump
 
 on:
   pull_request:
-    types:
-      - closed
+    types: [closed]
 
 jobs:
   bump:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: "3.11"
 
       - name: Install uv + bump2version
         run: |
           pip install uv
-          uv pip install bump2version
+          uv pip install --system bump2version
 
-      - name: Determine bump type
+      - name: Install GitHub CLI
+        run: sudo apt-get install -y gh
+
+      - name: Authenticate GH CLI
+        run: gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Determine bump type from labels
         id: bump_type
         run: |
-          if gh pr view ${{ github.event.pull_request.number }} --json labels | grep -q '"feature"'; then
-            echo "type=minor" >> $GITHUB_OUTPUT
-          elif gh pr view ${{ github.event.pull_request.number }} --json labels | grep -q '"breaking-change"'; then
+          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
+
+          echo "PR labels: $LABELS"
+
+          if echo "$LABELS" | grep -qi "breaking-change"; then
             echo "type=major" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -qi "feature"; then
+            echo "type=minor" >> $GITHUB_OUTPUT
           else
             echo "type=patch" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run version bump
+      - name: Bump version
         run: bump2version ${{ steps.bump_type.outputs.type }}
 
       - name: Push version bump commit + tag
