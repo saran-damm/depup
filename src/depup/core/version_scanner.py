@@ -12,145 +12,106 @@ This module does not perform installs; it only reports version metadata.
 
 from __future__ import annotations
 
-import logging
-import subprocess
-from dataclasses import dataclass
+import concurrent.futures
+import requests
 from typing import List, Optional
+from packaging.version import parse as parse_version
 
-from packaging.version import InvalidVersion, Version
-
-from depup.core.exceptions import DepupError
-from depup.core.parser import DependencySpec
-
-logger = logging.getLogger(__name__)
+from depup.core.models import DependencySpec, VersionInfo
 
 
-@dataclass(frozen=True)
-class VersionInfo:
-    """
-    Represents upgrade metadata for a package.
-
-    Attributes:
-        name: Package name
-        current: Current declared version (may be None)
-        latest: Latest version available on PyPI
-        update_type: "patch" | "minor" | "major" | "none"
-    """
-    name: str
-    current: Optional[str]
-    latest: str
-    update_type: str
-
-
-class VersionScannerError(DepupError):
-    """Raised when version scanning fails for any package."""
+class VersionScannerError(Exception):
+    pass
 
 
 class VersionScanner:
-    """
-    Scans packages for available updates using PyPI.
+    PYPI_URL = "https://pypi.org/pypi/{package}/json"
+    TIMEOUT = 5
+    MAX_WORKERS = 10
 
-    Usage:
-    -------
-    scanner = VersionScanner()
-    results = scanner.scan(dependencies)
-    """
+    IGNORE = {
+        "pip", "setuptools", "wheel", "pkginfo",
+        "distlib", "virtualenv", "pip-tools",
+        "typing-extensions", "charset-normalizer",
+        "idna", "urllib3",
+    }
 
-    def scan(self, dependencies: List[DependencySpec]) -> List[VersionInfo]:
-        results: List[VersionInfo] = []
+    def scan(self, deps: List[DependencySpec]) -> List[VersionInfo]:
+        deps = [d for d in deps if d.name.lower() not in self.IGNORE]
 
-        for dep in dependencies:
-            try:
-                latest = self._get_latest_from_pypi(dep.name)
-                update_type = self._classify_update(dep.version, latest)
-                results.append(
-                    VersionInfo(
-                        name=dep.name,
-                        current=dep.version,
-                        latest=latest,
-                        update_type=update_type,
-                    )
-                )
-            except Exception as e:
-                raise VersionScannerError(f"Failed to scan version for {dep.name}: {e}")
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_map = {
+                executor.submit(self._fetch_version_info, dep): dep
+                for dep in deps
+            }
+
+            for future in concurrent.futures.as_completed(future_map):
+                dep = future_map[future]
+                try:
+                    info = future.result()
+                except Exception as exc:
+                    raise VersionScannerError(f"Failed to scan {dep.name}: {exc}")
+                if info:
+                    results.append(info)
 
         return results
 
-    # ------------------------------------------------------------------
-    # Get latest version from PyPI via pip index
-    # ------------------------------------------------------------------
-    def _get_latest_from_pypi(self, package: str) -> str:
-        """
-        Uses `pip index versions <package>` to retrieve available versions.
+    def _fetch_version_info(self, dep: DependencySpec) -> Optional[VersionInfo]:
+        pkg = dep.name
 
-        Example output:
-            requests (2.31.0)
-            Available versions: 2.31.0, 2.30.0, ...
-
-        This avoids hitting PyPI JSON API directly and respects env settings.
-        """
         try:
-            result = subprocess.run(
-                ["pip", "index", "versions", package],
-                capture_output=True,
-                text=True,
-                check=True
+            response = requests.get(
+                self.PYPI_URL.format(package=pkg),
+                timeout=self.TIMEOUT,
             )
-        except subprocess.CalledProcessError as e:
-            logger.error("pip index failed for %s: %s", package, e.stderr)
-            raise VersionScannerError(f"pip index failed for {package}")
+        except Exception as exc:
+            raise RuntimeError(f"Network error fetching {pkg}: {exc}")
 
-        lines = result.stdout.splitlines()
-        for line in lines:
-            line = line.strip()
-            if line.startswith("Available versions:"):
-                versions = (
-                    line.replace("Available versions:", "")
-                    .strip()
-                    .split(", ")
-                )
-                latest = versions[0]
-                return latest
+        if response.status_code != 200:
+            return VersionInfo(pkg, dep.version or "", "", "none")
 
-        raise VersionScannerError(f"No version info found for {package}")
+        data = response.json()
 
-    # ------------------------------------------------------------------
-    # Update classification
-    # ------------------------------------------------------------------
-    def _classify_update(self, declared: Optional[str], latest: str) -> str:
-        """
-        Classify patch/minor/major update using packaging.version.
-        """
-        try:
-            latest_v = Version(latest)
-        except InvalidVersion:
-            return "none"
+        # 🚀 ALWAYS USE info.version (the PEP440-canonical latest version)
+        latest = data["info"].get("version", "")
 
-        if not declared:
-            return "none"
+        update_type = self._classify(dep.version, latest)
 
-        # extract declared version specifier like >=1.0, ==2.3
-        # we take the version part after operators
-        for op in ["==", ">=", "<=", "~=", "!=", "<", ">"]:
-            if op in declared:
-                declared_raw = declared.split(op)[-1].strip()
-                break
-        else:
-            declared_raw = declared.strip()
+        return VersionInfo(pkg, dep.version or "", latest, update_type)
+    
+    def _normalize_declared(self, version: Optional[str]) -> Optional[str]:
+        if not version:
+            return None
 
-        try:
-            current_v = Version(declared_raw)
-        except InvalidVersion:
-            return "none"
+        # Remove specifier operators like ==, >=, <=, ~=
+        for op in ("==", ">=", "<=", "~=", ">", "<"):
+            if version.startswith(op):
+                return version[len(op):]
 
-        if latest_v <= current_v:
-            return "none"
+        # In case there are spaces or weird formatting
+        return version.strip()
 
-        if latest_v.major > current_v.major:
+
+    def _classify(self, current: Optional[str], latest: str) -> str:
+        current = self._normalize_declared(current)
+
+        if not current:
             return "major"
-        if latest_v.minor > current_v.minor:
-            return "minor"
-        if latest_v.micro > current_v.micro:
-            return "patch"
 
-        return "none"
+        try:
+            c = parse_version(current)
+            l = parse_version(latest)
+        except Exception:
+            return "major"
+
+        if l <= c:
+            return "none"
+
+        # Major/minor/patch logic
+        if getattr(l, "major", None) > getattr(c, "major", None):
+            return "major"
+        if getattr(l, "minor", None) > getattr(c, "minor", None):
+            return "minor"
+        return "patch"
+
