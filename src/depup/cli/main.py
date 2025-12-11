@@ -15,6 +15,7 @@ from depup.core.environment_scanner import EnvironmentScanner
 from depup.core.models import VersionInfo
 from depup.utils.render import * 
 from depup.utils.upgrade_utils import _perform_env_upgrades
+from depup.utils.scan_utils import *
 
 app = typer.Typer(help="Dependency Upgrade Advisor CLI")
 console = Console()
@@ -52,14 +53,19 @@ def scan_command(
         "--env",
         help="Scan installed environment instead of dependency files.",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output results in JSON format instead of table.",
+    ),
 ) -> None:
     """
-    Scan dependency files OR installed environment for outdated dependencies.
+    Scan dependency files or installed environment for outdated dependencies.
     """
 
-    # ------------------------------------------------------------------------------------
-    # ENVIRONMENT MODE (--env)
-    # ------------------------------------------------------------------------------------
+    # ---------------------------------------------------------
+    # ENVIRONMENT MODE
+    # ---------------------------------------------------------
     if env:
         console.print("[blue]Scanning installed environment packages...[/blue]")
 
@@ -67,7 +73,7 @@ def scan_command(
         deps = scanner.scan()
 
         if not deps:
-            console.print("[yellow]No installed packages detected in environment.[/yellow]")
+            console.print("[yellow]No installed packages detected.[/yellow]")
             raise typer.Exit(0)
 
         if latest:
@@ -77,50 +83,75 @@ def scan_command(
             except VersionScannerError as exc:
                 console.print(f"[red]Failed to scan versions: {exc}[/red]")
                 raise typer.Exit(1)
+        else:
+            # Construct basic info objects
+            infos = [
+                VersionInfo(
+                    name=d.name,
+                    current=d.version,
+                    latest=d.version,
+                    update_type="none",
+                ) for d in deps
+            ]
 
+        # JSON OUTPUT PATH
+        if json_output:
+            console.print_json(data=_convert_to_jsonable(deps, infos))
+            raise typer.Exit(0)
+
+        # TABLE OUTPUT PATH
+        if latest:
             _render_latest_env_table(deps, infos)
         else:
             _render_env_table(deps)
 
         raise typer.Exit(0)
 
-    # ------------------------------------------------------------------------------------
-    # FILE-BASED MODE (default)
-    # ------------------------------------------------------------------------------------
+    # ---------------------------------------------------------
+    # FILE-BASED MODE
+    # ---------------------------------------------------------
     project_root = path or Path.cwd()
-
     parser = DependencyParser(project_root)
     deps = parser.parse_all()
 
-    # If no dependency files exist, guide user
     if not deps:
         console.print(
-            "[yellow]No dependency files found in this project.[/yellow]\n\n"
-            "You can:\n"
-            "  • Scan installed environment packages:   [cyan]depup scan --env[/cyan]\n"
-            "  • Create a starter pyproject:            [cyan]depup init[/cyan] (coming soon)\n"
-            "  • Add a requirements.txt or pyproject.toml file\n"
+            "[yellow]No dependency files found.[/yellow]\n"
+            "Try:\n"
+            "  • depup scan --env\n"
+            "  • depup init (coming soon)\n"
         )
         raise typer.Exit(0)
 
-    # ------------------------------------------------------------------------------------
-    # LATEST MODE (WITH FILES)
-    # ------------------------------------------------------------------------------------
+    # Lookup latest versions if needed
     if latest:
-        scanner = VersionScanner()
+        version_scanner = VersionScanner()
         try:
-            infos = scanner.scan(deps)
+            infos = version_scanner.scan(deps)
         except VersionScannerError as exc:
             console.print(f"[red]Failed to scan versions: {exc}[/red]")
             raise typer.Exit(1)
+    else:
+        infos = [
+            VersionInfo(
+                name=d.name,
+                current=d.version,
+                latest=d.version,
+                update_type="none",
+            ) for d in deps
+        ]
 
-        _render_latest_file_table(deps, infos)
+    # JSON OUTPUT PATH
+    if json_output:
+        console.print_json(data=_convert_to_jsonable(deps, infos))
         raise typer.Exit(0)
 
-    # ------------------------------------------------------------------------------------
-    # NORMAL MODE (WITH FILES)
-    # ------------------------------------------------------------------------------------
-    _render_declared_file_table(deps)
+    # TABLE OUTPUT PATH
+    if latest:
+        _render_latest_file_table(deps, infos)
+    else:
+        _render_declared_file_table(deps)
+
 
 
 # ---------------------------------------------------------------------
