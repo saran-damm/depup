@@ -1,42 +1,55 @@
 from __future__ import annotations
 
-import json
-import subprocess
+import logging
+from importlib import metadata
 from typing import List
 
 from depup.core.models import DependencySpec
 
+logger = logging.getLogger(__name__)
+
+
+class EnvironmentScanError(Exception):
+    """Raised when environment package scanning fails."""
+
 
 class EnvironmentScanner:
     """
-    Fallback scanner that reads currently installed packages
-    using `pip list --format=json`.
+    Scans installed packages from the currently running Python environment.
+
+    Uses importlib.metadata so this works with:
+      - uv venv (pip may be absent)
+      - venv
+      - poetry
+      - system python
     """
 
     def scan(self) -> List[DependencySpec]:
         try:
-            result = subprocess.run(
-                ["pip", "list", "--format=json"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(f"Failed to read environment packages: {exc.stderr}") from exc
-
-        try:
-            packages = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("Failed to parse pip output as JSON") from exc
+            dists = metadata.distributions()
+        except Exception as exc:
+            logger.error("Failed to read installed distributions: %s", exc)
+            raise EnvironmentScanError(
+                "Unable to inspect installed packages. "
+                "If this is a minimal environment, ensure site-packages metadata is available."
+            ) from exc
 
         deps: List[DependencySpec] = []
-        for pkg in packages:
+        for dist in dists:
+            try:
+                name = dist.metadata.get("Name") or ""
+                version = dist.version
+            except Exception:
+                continue
+
+            if not name:
+                continue
+
             deps.append(
                 DependencySpec(
-                    name=pkg["name"],
-                    version=pkg["version"],  # exact pinned version
-                    source_file=None,  # environment has no file
+                    name=name.lower(),
+                    version=version,
+                    source_file=None,
                 )
             )
 

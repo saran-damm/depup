@@ -1,24 +1,26 @@
-def _convert_to_jsonable(deps, infos):
-    info_by_name = {i.name.lower(): i for i in infos}
+from __future__ import annotations
 
+from typing import Any, Dict, List
+
+from depup.core.models import DependencySpec, UpdateType, VersionInfo
+
+
+def _has_outdated(infos: List[VersionInfo]) -> bool:
+    return any(i.update_type in {UpdateType.PATCH, UpdateType.MINOR, UpdateType.MAJOR, UpdateType.NONE} for i in infos)
+
+
+def _convert_to_jsonable(deps: List[DependencySpec], infos: List[VersionInfo]) -> Dict[str, Any]:
+    info_by = {i.name.lower(): i for i in infos}
     items = []
-    for dep in deps:
-        info = info_by_name.get(dep.name.lower())
-
-        items.append({
-            "name": dep.name,
-            "declared": dep.version,
-            "current": dep.version,  # for env mode declared=None
-            "latest": info.latest if info else None,
-            "update_type": info.update_type if info else "none",
-            "source": dep.source_file.name if dep.source_file else None,
-        })
-    return items
-
-def _has_outdated(infos: list) -> bool:
-    return any(i.update_type != "none" for i in infos)
-
-__all__ = [
-    "_convert_to_jsonable",
-    "_has_outdated",
-]
+    for d in deps:
+        vi = info_by.get(d.name.lower())
+        items.append(
+            {
+                "name": d.name,
+                "declared": d.version,
+                "latest": vi.latest if vi else None,
+                "update_type": (vi.update_type.value if vi else UpdateType.NONE.value),
+                "source_file": (d.source_file.name if d.source_file else None),
+            }
+        )
+    return {"dependencies": items}

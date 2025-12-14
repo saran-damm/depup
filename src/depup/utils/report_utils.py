@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
-from depup.core.models import DependencySpec, VersionInfo
+from depup.core.models import DependencySpec, VersionInfo, UpdateType
 
 
 def generate_markdown_report(
@@ -28,7 +28,7 @@ def generate_markdown_report(
 
         current = dep.version or ""
         latest = info.latest if info else ""
-        update_type = info.update_type if info else "none"
+        update_type = info.update_type if info else UpdateType.NONE
         source = dep.source_file.name
 
         lines.append(

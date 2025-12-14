@@ -3,7 +3,7 @@ import tempfile
 from unittest.mock import patch
 
 from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
-from depup.core.parser import DependencySpec
+from depup.core.parsers.declaration_parser import DependencySpec
 
 
 def test_update_pyproject_pep621_dependencies():
