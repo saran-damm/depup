@@ -1,5 +1,6 @@
 from rich.console import Console
 from rich.table import Table
+from depup.core.models import UpdateType
 
 console = Console()
 
@@ -19,7 +20,7 @@ def _render_latest_file_table(deps, infos):
             dep.name,
             dep.version or "",
             info.latest if info else "",
-            info.update_type if info else "none",
+            info.update_type if info else UpdateType.NONE,
             dep.source_file.name,
         )
 
@@ -64,7 +65,7 @@ def _render_latest_env_table(deps, infos):
             dep.name,
             dep.version or "",
             info.latest if info else "",
-            info.update_type if info else "none",
+            info.update_type if info else UpdateType.NONE,
         )
 
     console.print(table)

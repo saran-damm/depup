@@ -12,10 +12,11 @@ from depup.core.parser import DependencyParser
 from depup.core.version_scanner import VersionScanner, VersionScannerError
 from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
 from depup.core.environment_scanner import EnvironmentScanner
-from depup.core.models import VersionInfo
+from depup.core.models import VersionInfo, UpdateType
 from depup.core.poetry_lock_parser import PoetryLockParser
 from depup.core.pipfile_lock_parser import PipfileLockParser
 from depup.utils.report_utils import generate_markdown_report
+
 from depup.utils.render import *
 from depup.utils.upgrade_utils import *
 from depup.utils.scan_utils import *
@@ -107,7 +108,7 @@ def scan_command(
                     name=d.name,
                     current=d.version,
                     latest=d.version,
-                    update_type="none",
+                    update_type=UpdateType.NONE,
                 )
                 for d in deps
             ]
@@ -179,7 +180,7 @@ def scan_command(
                 name=d.name,
                 current=d.version,
                 latest=d.version,
-                update_type="none",
+                update_type=UpdateType.NONE,
             )
             for d in deps
         ]
@@ -262,7 +263,7 @@ def upgrade_command(
         outdated = [
             i
             for i in infos
-            if i.update_type != "none" and (not pkg_filter or i.name.lower() in pkg_filter)
+            if i.update_type != UpdateType.NONE and (not pkg_filter or i.name.lower() in pkg_filter)
         ]
 
         if not outdated:
