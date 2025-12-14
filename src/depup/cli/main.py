@@ -15,6 +15,7 @@ from depup.core.environment_scanner import EnvironmentScanner
 from depup.core.models import VersionInfo
 from depup.core.poetry_lock_parser import PoetryLockParser
 from depup.core.pipfile_lock_parser import PipfileLockParser
+from depup.utils.report_utils import generate_markdown_report
 from depup.utils.render import *
 from depup.utils.upgrade_utils import *
 from depup.utils.scan_utils import *
@@ -65,6 +66,11 @@ def scan_command(
         "--check",
         help="Exit with non-zero status if outdated dependencies are found.",
     ),
+    report: Optional[Path] = typer.Option(
+        None,
+        "--report",
+        help="Write scan results to a Markdown report file.",
+    ),
 ) -> None:
     """
     Scan dependency files or installed environment for outdated dependencies.
@@ -114,6 +120,15 @@ def scan_command(
                 _render_latest_env_table(deps, infos)
             else:
                 _render_env_table(deps)
+
+        if report:
+            generate_markdown_report(
+                output_path=report,
+                deps=deps,
+                infos=infos,
+                title="Environment Dependency Report",
+            )
+            console.print(f"[green]Markdown report written to {report}[/green]")
 
         # CHECK MODE
         if check:
@@ -177,6 +192,15 @@ def scan_command(
             _render_latest_file_table(deps, infos)
         else:
             _render_declared_file_table(deps)
+
+    if report:
+        generate_markdown_report(
+            output_path=report,
+            deps=deps,
+            infos=infos,
+            title="Project Dependency Report",
+        )
+        console.print(f"[green]Markdown report written to {report}[/green]")
 
     # CHECK MODE
     if check:
