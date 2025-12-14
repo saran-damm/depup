@@ -3,141 +3,301 @@
 [![PyPI Version](https://img.shields.io/pypi/v/depup.svg)](https://pypi.org/project/depup/)
 ![Python Versions](https://img.shields.io/pypi/pyversions/depup.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-[![Docs](https://img.shields.io/badge/docs-coming--soon-blue)](https://example.com)
-![CI](https://github.com/saran-damm/depup/actions/workflows/ci.yml/badge.svg)
-![Publish](https://github.com/saran-damm/depup/actions/workflows/publish.yml/badge.svg)
+[![CI](https://github.com/saran-damm/depup/actions/workflows/ci.yml/badge.svg)](https://github.com/saran-damm/depup/actions)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://saran-damm.github.io/depup/)
 
-**Depup** is a modern Python CLI tool that helps developers keep their project dependencies up-to-date, safe, and maintainable. It automatically:
+**depup** is a production-grade Python CLI that helps developers **understand, audit, and safely upgrade dependencies** across projects and environments.
 
-- Scans for declared dependencies  
-- Detects updates on PyPI  
-- Classifies semantic versioning impact (patch/minor/major)  
-- Prepares upgrade paths  
-- (Future) Provides AI-assisted upgrade analysis and code fixes
-
-This tool is built for modern development workflows and future integration with AI agents (Cursor, Windsurf, Continue) via MCP.
+It focuses on:
+- correctness
+- visibility
+- CI-friendliness
+- minimal surprises
 
 ---
 
-## 🚀 Features
 
-### ✅ Current Features
-- Parse `requirements.txt`, `pyproject.toml`, and `Pipfile`
-- Display declared package versions
-- Fetch latest versions from PyPI (`depup scan --latest`)
-- Categorize updates by semantic version (patch/minor/major)
-- Clean, colorized CLI output via Typer + Rich
+## Why Depup?
 
-### 🧭 Roadmap (Planned)
-- Automated safe upgrades via `depup upgrade`
-- Dependency file rewriting after upgrades
-- Post-upgrade code scanning
-- Markdown/HTML upgrade reports
-- LLM-powered changelog summarization
-- MCP Agent integration for AI IDEs
+Managing Python dependencies looks simple—until it isn’t.
+
+Most teams eventually face at least one of these problems:
+
+* Dependencies silently drift out of date
+* Upgrading one package breaks others
+* CI pipelines fail due to incompatible versions
+* Security fixes are delayed because upgrades feel risky
+* Different projects use different dependency formats
+* There’s no clear visibility into *what* will change before upgrading
+
+Depup exists to **make dependency upgrades safe, visible, and intentional**.
+
+---
+
+### The Problem with Existing Tools
+
+| Tool                        | Limitation                             |
+| --------------------------- | -------------------------------------- |
+| `pip list --outdated`       | No semantic context, no safety         |
+| `pip-tools / poetry update` | Updates blindly, often breaking things |
+| Dependabot                  | Reactive, PR-heavy, noisy              |
+| Manual upgrades             | Time-consuming, error-prone            |
+
+Most tools answer **“what is outdated?”**
+Depup answers **“what should I upgrade, why, and how risky is it?”**
+
+---
+
+### What Depup Does Differently?
+
+Depup is designed as a **dependency intelligence layer**, not just an updater.
+
+#### Deep Visibility Before Change
+
+* See **declared vs latest versions**
+* Understand **semantic impact** (patch / minor / major)
+* Works across:
+
+  * `requirements.txt`
+  * `pyproject.toml` (PEP 621 + Poetry)
+  * `Pipfile`
+  * `Poetry.lock`, `Pipfile.lock`
+  * Installed environments (`--env`)
+
+#### Safety-First Upgrades
+
+* Dry-run support (`--dry-run`)
+* Selective upgrades (`--only-patch`, `--only-minor`, `--only-major`)
+* Package-level filtering
+* No blind rewriting of dependency files
+
+#### CI & Automation Ready
+
+* `--check` mode with proper exit codes
+* JSON output for pipelines
+* Markdown reports for audits and reviews
+* Designed for GitHub Actions, GitLab CI, Azure DevOps
+
+#### Built for AI-Native Workflows
+
+Depup is architected to integrate with:
+
+* AI IDE agents (Cursor, Windsurf, Continue)
+* MCP-based tooling
+* Future AI-driven upgrade analysis and code fixes
+
+This makes depup **future-proof**, not just useful today.
+
+---
+
+### Where Depup Fits in Your Workflow
+
+```mermaid
+flowchart LR
+    Dev[Developer / CI]
+    Scan[depup scan]
+    Analyze[Version Analysis]
+    Plan[Upgrade Plan]
+    Upgrade[depup upgrade]
+    Report[JSON / Markdown Reports]
+
+    Dev --> Scan
+    Scan --> Analyze
+    Analyze --> Plan
+    Plan --> Upgrade
+    Plan --> Report
+```
+
+Depup fits **before** upgrades — exactly where most failures happen.
+
+---
+
+### Who depup is for?
+
+* **Individual developers** who want safer upgrades
+* **Teams** managing multiple Python projects
+* **CI/CD pipelines** that need deterministic dependency checks
+* **Open-source maintainers** avoiding breaking releases
+* **AI-assisted workflows** needing structured dependency data
+
+
+---
+
+## Features
+
+### Implemented (v0.9.0)
+- Scan dependency files:
+  - `requirements.txt`
+  - `pyproject.toml` (PEP 621 + Poetry)
+  - `Pipfile`
+  - `Poetry.lock` (read-only)
+  - `Pipfile.lock` (read-only)
+- Scan installed environments (`--env`)
+- Fetch latest versions from PyPI
+- Semantic update classification:
+  - patch / minor / major / none
+- JSON output (`--json`)
+- Markdown reports (`--report`)
+- CI-friendly check mode (`--check`)
+- Deterministic upgrade planning
+- Safe upgrade execution (`depup upgrade`)
+
+### Planned (towards v1.0.0)
+- Smarter conflict detection
+- Editable upgrade policies
+- AI-assisted changelog summaries
+- IDE / MCP agent integration
 
 ---
 
 ## Installation
 
-``` bash
+```bash
 pip install depup
 ```
 
-Or with `uv`:
+or with `uv`:
 
 ```bash
 uv tool install depup
 ```
+
 ---
 
-## 📘 Usage
+## Usage
 
-### List declared dependencies
+### Scan project dependencies
 
 ```bash
 depup scan
 ```
 
-### Show latest available versions from PyPI
+### Include latest versions from PyPI
 
 ```bash
 depup scan --latest
 ```
 
-Example output:
+### Fail CI if outdated dependencies exist
 
+```bash
+depup scan --latest --check
 ```
-┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃ Package Name ┃ Declared Spec┃ Latest Version┃ Update Type  ┃ Source File  ┃
-┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ typer        │ >=0.12       │ 0.12.3        │ patch        │ pyproject.toml
-│ packaging    │ >=24.0       │ 24.1.0        │ patch        │ pyproject.toml
-│ rich         │ >=13.0       │ 13.7.1        │ patch        │ pyproject.toml
-└──────────────┴──────────────┴───────────────┴──────────────┴──────────────┘
+
+### Scan installed environment
+
+```bash
+depup scan --env --latest
+```
+
+### Generate JSON output
+
+```bash
+depup scan --latest --json
+```
+
+### Generate Markdown report
+
+```bash
+depup scan --latest --report deps.md
 ```
 
 ---
 
-## 📂 Supported Dependency Files
+## Upgrading dependencies
 
-* `requirements.txt`
-* `pyproject.toml` (PEP 621 and Poetry)
-* `Pipfile`
+Preview upgrades (safe):
+
+```bash
+depup upgrade --dry-run
+```
+
+Apply upgrades:
+
+```bash
+depup upgrade
+```
+
+Upgrade only patch updates:
+
+```bash
+depup upgrade --only-patch
+```
+
+Upgrade environment packages:
+
+```bash
+depup upgrade --env
+```
 
 ---
 
-## 🧪 Testing
+## Architecture
+
+```mermaid
+flowchart LR
+    CLI[CLI -Typer]
+    Parser[Dependency Parsers]
+    Env[Environment Scanner]
+    Scanner[Version Scanner]
+    Planner[Upgrade Planner]
+    Executor[Upgrade Executor]
+    Reports[Reports / JSON / Markdown]
+
+    CLI --> Parser
+    CLI --> Env
+    Parser --> Scanner
+    Env --> Scanner
+    Scanner --> Planner
+    Planner --> Executor
+    Planner --> Reports
+```
+
+---
+
+## Testing
 
 ```bash
 pytest -q
 ```
 
----
-
-## 🧱 Project Structure
-
-```text
-src/depup/
-    cli/
-    core/
-    reporting/
-    scanning/
-    utils/
-tests/
-pyproject.toml
-README.md
-CHANGELOG.md
-LICENSE
-```
+All critical components are unit tested.
 
 ---
 
-## 🔖 Version Management
+## Versioning Philosophy
 
-We use **bump2version** to automate versioning:
-
-```bash
-bump2version patch  # 0.1.1 → 0.1.2
-bump2version minor  # 0.1.1 → 0.2.0
-bump2version major  # 0.1.1 → 1.0.0
-```
+* `0.x` → Rapid iteration, APIs may evolve
+* `0.9.x` → Feature-complete, stable, CI-ready
+* `1.0.0` → API freeze, backward compatibility guarantees
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License — see the `LICENSE` file for details.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome!
-Feel free to open issues or submit PRs.
+MIT License — see `LICENSE`.
 
 ---
 
-## ⭐ Acknowledgements
+## Contributing
 
-This project is inspired by modern dependency management workflows and the architecture outlined in the technical design document.
+Issues, PRs, and discussions are welcome.
+Please keep changes small and well-tested.
+
+---
+
+## Acknowledgements
+
+Built with:
+
+* Typer
+* Rich
+* packaging
+* requests
+
+Inspired by real-world CI and dependency pain.
+
+---
+
+## Detailed documentation available at:
+https://saran-damm.github.io/depup/
