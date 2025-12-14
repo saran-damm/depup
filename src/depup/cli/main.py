@@ -14,6 +14,7 @@ from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
 from depup.core.environment_scanner import EnvironmentScanner
 from depup.core.models import VersionInfo
 from depup.core.poetry_lock_parser import PoetryLockParser
+from depup.core.pipfile_lock_parser import PipfileLockParser
 from depup.utils.render import *
 from depup.utils.upgrade_utils import *
 from depup.utils.scan_utils import *
@@ -129,11 +130,17 @@ def scan_command(
     parser = DependencyParser(project_root)
     deps = parser.parse_all()
 
+    # Poetry lockfile (read-only)
     poetry_parser = PoetryLockParser(project_root)
     poetry_deps = poetry_parser.parse()
-
     if poetry_deps:
         deps.extend(poetry_deps)
+
+    # Pipfile.lock (read-only)
+    pipfile_parser = PipfileLockParser(project_root)
+    pipfile_deps = pipfile_parser.parse()
+    if pipfile_deps:
+        deps.extend(pipfile_deps)
 
     if not deps:
         console.print(
