@@ -25,3 +25,7 @@ def _perform_env_upgrades(infos: List[VersionInfo], dry_run: bool = False):
             console.print(f"[green]✓ {pkg} upgraded successfully[/green]")
         except subprocess.CalledProcessError as exc:
             console.print(f"[red]✗ Failed to upgrade {pkg}: {exc}[/red]")
+
+__all__ = [
+    "_perform_env_upgrades",
+]
