@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +32,7 @@ import tomllib
 import tomli_w
 
 from depup.core.exceptions import DepupError
-from depup.core.parsers.declaration_parser import DependencySpec
+from depup.core.models import DependencySpec
 
 logger = logging.getLogger(__name__)
 
@@ -129,17 +130,7 @@ class UpgradeExecutor:
             try:
                 self._run_pip_upgrade(plan)
                 self._update_dependency_files(plan)
-                results.append(
-                    UpgradeResult(
-                        name=plan.name,
-                        from_version=plan.current_spec,
-                        to_version=plan.target_version,
-                        success=True,
-                        error=None,
-                        dry_run=False,
-                    )
-                )
-            except UpgradeExecutionError as exc:
+            except Exception as exc:
                 logger.error("Upgrade failed for %s: %s", plan.name, exc)
                 results.append(
                     UpgradeResult(
@@ -151,26 +142,47 @@ class UpgradeExecutor:
                         dry_run=False,
                     )
                 )
+                continue
 
-        return results
+            results.append(
+                UpgradeResult(
+                    name=plan.name,
+                    from_version=plan.current_spec,
+                    to_version=plan.target_version,
+                    success=True,
+                    error=None,
+                    dry_run=False,
+                )
+            )
 
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
     def _run_pip_upgrade(self, plan: PlannedUpgrade) -> None:
-        """
-        Run pip install --upgrade for the given plan.
-        """
         try:
             subprocess.run(
-                ["pip", "install", "--upgrade", f"{plan.name}=={plan.target_version}"],
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--upgrade",
+                    f"{plan.name}=={plan.target_version}",
+                ],
                 check=True,
                 text=True,
                 capture_output=True,
             )
         except subprocess.CalledProcessError as exc:
             logger.error("pip install failed for %s: %s", plan.name, exc.stderr)
-            raise UpgradeExecutionError(f"pip install failed for {plan.name}: {exc.stderr}") from exc
+            raise UpgradeExecutionError(
+                f"pip install failed for {plan.name}: {exc.stderr}"
+            ) from exc
+        
+    def _backup_file(self, path: Path) -> None:
+        backup = path.with_suffix(path.suffix + ".depup.bak")
+        if not backup.exists():
+            backup.write_text(path.read_text())
 
     def _update_dependency_files(self, plan: PlannedUpgrade) -> None:
         """
@@ -212,7 +224,7 @@ class UpgradeExecutor:
         updated_lines: List[str] = []
 
         pattern = re.compile(
-            rf"^(\s*)({re.escape(package)})(\s*[<>=!~]+)([^#\s]+)(.*)$",
+            rf"^(\s*)({re.escape(package)})(\s*[<>=!~]+)([^;\s]+)(.*)$",
             re.IGNORECASE,
         )
 
@@ -225,6 +237,7 @@ class UpgradeExecutor:
             else:
                 updated_lines.append(line)
 
+        self._backup_file(path)
         path.write_text("\n".join(updated_lines) + "\n")
 
     # ----------------- pyproject.toml ---------------------------------- #
@@ -278,6 +291,7 @@ class UpgradeExecutor:
 
         if updated:
             logger.info("Writing updated pyproject.toml for %s", package)
+            self._backup_file(path)
             path.write_text(tomli_w.dumps(data))
 
     def _rewrite_pep621_entry(self, dep_str: str, package: str, new_version: str) -> str:
@@ -358,4 +372,5 @@ class UpgradeExecutor:
 
         if updated:
             logger.info("Writing updated Pipfile for %s", package)
+            self._backup_file(path)
             path.write_text(tomli_w.dumps(data))
