@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from depup.core.parsers.declaration_parser import DependencySpec
+from depup.core.models import DependencySpec
 from depup.core.version_scanner import VersionScanner
 
 
