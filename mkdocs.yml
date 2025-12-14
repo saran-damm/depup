@@ -1,13 +1,68 @@
 site_name: depup Documentation
+site_description: Dependency Upgrade Advisor for Python projects
+site_author: Sai Saran Dammavalam
+repo_name: saran-damm/depup
 repo_url: https://github.com/saran-damm/depup
+site_url: https://saran-damm.github.io/depup/
+
 theme:
   name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: blue
+      accent: indigo
+    - scheme: slate
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.highlight
+
+plugins:
+  - search
 
 nav:
   - Home: index.md
-  - Installation: install.md
-  - CLI Usage: cli.md
-  - API Reference:
-      - Parser: api/parser.md
-      - Version Scanner: api/scanner.md
-      - Upgrade Executor: api/upgrade.md
+  - Installation: installation.md
+  - Quick Start: quickstart.md
+
+  - Commands:
+      - Scan: commands/scan.md
+      - Upgrade: commands/upgrade.md
+
+  - Dependency Formats:
+      - requirements.txt: formats/requirements.md
+      - pyproject.toml: formats/pyproject.md
+      - poetry.lock: formats/poetry-lock.md
+      - Pipfile.lock: formats/pipfile-lock.md
+
+  - Reports:
+      - JSON Output: reports/json.md
+      - Markdown Reports: reports/markdown.md
+
+  - CI & Automation:
+      - GitHub Actions: ci/github-actions.md
+      - Exit Codes: exit-codes.md
+      - Dependency Policies: policies.md
+
+  - Architecture:
+      - Overview: architecture/overview.md
+
+  - Project:
+      - Roadmap: roadmap.md
+      - Vision: vision.md
