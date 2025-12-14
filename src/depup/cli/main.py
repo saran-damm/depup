@@ -177,18 +177,56 @@ def scan_command(
 # UPGRADE COMMAND
 # ---------------------------------------------------------------------
 @app.command("upgrade")
+@app.command("upgrade")
 def upgrade_command(
     path: Optional[Path] = typer.Argument(
         None,
-        help="Project root directory (defaults to current working directory).",
+        help=(
+            "Project root directory containing dependency files "
+            "(defaults to current working directory)."
+        ),
     ),
-    only_patch: bool = typer.Option(False, "--only-patch"),
-    only_minor: bool = typer.Option(False, "--only-minor"),
-    only_major: bool = typer.Option(False, "--only-major"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    yes: bool = typer.Option(False, "--yes", "-y"),
-    env: bool = typer.Option(False, "--env"),
-    packages: Optional[List[str]] = typer.Argument(None),
+    packages: Optional[List[str]] = typer.Argument(
+        None,
+        help=(
+            "Optional list of specific packages to upgrade. "
+            "If omitted, all eligible dependencies are considered."
+        ),
+    ),
+    only_patch: bool = typer.Option(
+        False,
+        "--only-patch",
+        help="Upgrade only patch-level versions (x.y.Z).",
+    ),
+    only_minor: bool = typer.Option(
+        False,
+        "--only-minor",
+        help="Upgrade only minor-level versions (x.Y.z).",
+    ),
+    only_major: bool = typer.Option(
+        False,
+        "--only-major",
+        help="Upgrade only major-level versions (X.y.z).",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show the planned upgrades without applying any changes.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Run non-interactively and skip confirmation prompts.",
+    ),
+    env: bool = typer.Option(
+        False,
+        "--env",
+        help=(
+            "Upgrade packages installed in the current Python environment "
+            "instead of project dependency files."
+        ),
+    ),
 ) -> None:
     """
     Upgrade outdated dependencies.
