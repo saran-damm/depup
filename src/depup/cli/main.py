@@ -13,6 +13,7 @@ from depup.core.version_scanner import VersionScanner, VersionScannerError
 from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
 from depup.core.environment_scanner import EnvironmentScanner
 from depup.core.models import VersionInfo
+from depup.core.poetry_lock_parser import PoetryLockParser
 from depup.utils.render import *
 from depup.utils.upgrade_utils import *
 from depup.utils.scan_utils import *
@@ -127,6 +128,12 @@ def scan_command(
     project_root = path or Path.cwd()
     parser = DependencyParser(project_root)
     deps = parser.parse_all()
+
+    poetry_parser = PoetryLockParser(project_root)
+    poetry_deps = poetry_parser.parse()
+
+    if poetry_deps:
+        deps.extend(poetry_deps)
 
     if not deps:
         console.print(
