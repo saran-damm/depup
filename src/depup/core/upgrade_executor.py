@@ -31,7 +31,7 @@ import tomllib
 import tomli_w
 
 from depup.core.exceptions import DepupError
-from depup.core.parser import DependencySpec
+from depup.core.parsers.declaration_parser import DependencySpec
 
 logger = logging.getLogger(__name__)
 

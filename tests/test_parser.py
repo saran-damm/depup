@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 
 from depup.core.exceptions import InvalidDependencyFileError
-from depup.core.parser import DependencyParser
+from depup.core.parsers.declaration_parser import DependencyParser
 
 
 def write(path: Path, content: str):

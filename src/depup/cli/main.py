@@ -8,13 +8,13 @@ from rich.console import Console
 from rich.table import Table
 
 from depup.utils.logging_config import configure_logging
-from depup.core.parser import DependencyParser
+from depup.core.parsers.declaration_parser import DependencyParser
 from depup.core.version_scanner import VersionScanner, VersionScannerError
 from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
 from depup.core.environment_scanner import EnvironmentScanner
 from depup.core.models import VersionInfo, UpdateType
-from depup.core.poetry_lock_parser import PoetryLockParser
-from depup.core.pipfile_lock_parser import PipfileLockParser
+from depup.core.parsers.poetry_lock_parser import PoetryLockParser
+from depup.core.parsers.pipfile_lock_parser import PipfileLockParser
 from depup.utils.report_utils import generate_markdown_report
 
 from depup.utils.render import *
