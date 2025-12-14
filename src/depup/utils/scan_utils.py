@@ -15,7 +15,10 @@ def _convert_to_jsonable(deps, infos):
         })
     return items
 
+def _has_outdated(infos: list) -> bool:
+    return any(i.update_type != "none" for i in infos)
 
 __all__ = [
     "_convert_to_jsonable",
+    "_has_outdated",
 ]
