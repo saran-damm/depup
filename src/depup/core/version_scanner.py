@@ -1,34 +1,22 @@
-"""
-Version Scanner
-
-Responsible for:
-- Fetching latest versions from PyPI
-- Comparing declared vs latest versions
-- Classifying update types safely
-"""
-
 from __future__ import annotations
 
 import concurrent.futures
-import logging
 from typing import List, Optional
 
 import requests
 from packaging.version import InvalidVersion, Version, parse as parse_version
 
-from depup.core.models import DependencySpec, VersionInfo, UpdateType
-
-logger = logging.getLogger(__name__)
+from depup.core.models import DependencySpec, UpdateType, VersionInfo
 
 
 class VersionScannerError(Exception):
-    """Raised when a fatal version scanning error occurs."""
+    """Raised when version scanning fails."""
 
 
 class VersionScanner:
     PYPI_URL = "https://pypi.org/pypi/{package}/json"
-    TIMEOUT = 5
-    MAX_WORKERS = 10
+    TIMEOUT = 8
+    MAX_WORKERS = 12
 
     IGNORE = {
         "pip",
@@ -38,29 +26,21 @@ class VersionScanner:
         "distlib",
         "virtualenv",
         "pip-tools",
-        "typing-extensions",
-        "charset-normalizer",
-        "idna",
-        "urllib3",
     }
-
-    def __init__(self) -> None:
-        self._session = requests.Session()
 
     def scan(self, deps: List[DependencySpec]) -> List[VersionInfo]:
         filtered = [d for d in deps if d.name.lower() not in self.IGNORE]
+
         results: List[VersionInfo] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            future_map = {executor.submit(self._fetch_version_info, dep): dep for dep in filtered}
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.MAX_WORKERS
-        ) as executor:
-            futures = {
-                executor.submit(self._fetch_version_info, dep): dep
-                for dep in filtered
-            }
-
-            for future in concurrent.futures.as_completed(futures):
-                info = future.result()
+            for future in concurrent.futures.as_completed(future_map):
+                dep = future_map[future]
+                try:
+                    info = future.result()
+                except Exception as exc:
+                    raise VersionScannerError(f"Failed to scan {dep.name}: {exc}") from exc
                 if info:
                     results.append(info)
 
@@ -68,79 +48,79 @@ class VersionScanner:
 
     def _fetch_version_info(self, dep: DependencySpec) -> VersionInfo:
         pkg = dep.name
+        declared = dep.version or ""
 
         try:
-            response = self._session.get(
-                self.PYPI_URL.format(package=pkg),
-                timeout=self.TIMEOUT,
-            )
+            response = requests.get(self.PYPI_URL.format(package=pkg), timeout=self.TIMEOUT)
         except Exception as exc:
-            logger.warning("Network error fetching %s: %s", pkg, exc)
-            return self._safe_info(dep)
+            raise RuntimeError(f"Network error fetching {pkg}: {exc}") from exc
 
         if response.status_code != 200:
-            return self._safe_info(dep)
+            # Can't resolve latest -> treat as UNKNOWN
+            return VersionInfo(
+                name=pkg,
+                current=declared,
+                latest="",
+                update_type=UpdateType.NONE,
+            )
 
-        try:
-            data = response.json()
-            latest = data["info"].get("version")
-        except Exception as exc:
-            logger.warning("Invalid JSON for %s: %s", pkg, exc)
-            return self._safe_info(dep)
+        data = response.json()
+        latest = (data.get("info") or {}).get("version", "") or ""
 
-        update_type = self._classify(dep.version, latest)
+        update_type = self._classify(declared, latest)
 
         return VersionInfo(
             name=pkg,
-            current=self._normalize_declared(dep.version),
+            current=declared,
             latest=latest,
             update_type=update_type,
         )
 
-    def _safe_info(self, dep: DependencySpec) -> VersionInfo:
-        """
-        Return a safe fallback VersionInfo when resolution fails.
-        """
-        return VersionInfo(
-            name=dep.name,
-            current=self._normalize_declared(dep.version),
-            latest=None,
-            update_type=UpdateType.NONE,
-        )
-
-    def _normalize_declared(self, version: Optional[str]) -> Optional[str]:
-        if not version:
+    def _normalize_declared(self, spec: str) -> Optional[str]:
+        spec = (spec or "").strip()
+        if not spec:
             return None
 
-        version = version.strip()
-        for op in ("==", ">=", "<=", "~=", ">", "<"):
-            if version.startswith(op):
-                return version[len(op):].strip()
+        for op in ("==", ">=", "<=", "~=", "!=", ">", "<"):
+            if spec.startswith(op):
+                return spec[len(op):].strip()
 
-        return version
+        # Unhandled forms (e.g., "requests[security]>=2.0") should be treated carefully elsewhere
+        return spec.strip()
 
-    def _classify(
-        self,
-        current: Optional[str],
-        latest: Optional[str],
-    ) -> UpdateType:
-        if not current or not latest:
-            return UpdateType.NONE
-
+    def _safe_version(self, s: str) -> Optional[Version]:
         try:
-            current_v = parse_version(current)
-            latest_v = parse_version(latest)
+            v = parse_version(s)
+            if isinstance(v, Version):
+                return v
+            return None
         except InvalidVersion:
+            return None
+
+    def _classify(self, current_spec: str, latest: str) -> UpdateType:
+        current_norm = self._normalize_declared(current_spec)
+        latest_norm = (latest or "").strip()
+
+        if not latest_norm:
             return UpdateType.NONE
 
-        if not isinstance(current_v, Version) or not isinstance(latest_v, Version):
+        # If we don't know what the user declared, we can’t reliably classify.
+        if not current_norm:
+            return UpdateType.NONE
+        c = self._safe_version(current_norm)
+        l = self._safe_version(latest_norm)
+
+        if c is None or l is None:
             return UpdateType.NONE
 
-        if latest_v <= current_v:
+        if l == c:
             return UpdateType.NONE
 
-        if latest_v.major > current_v.major:
+        if l < c:
+            return UpdateType.NONE
+
+        if l.major > c.major:
             return UpdateType.MAJOR
-        if latest_v.minor > current_v.minor:
+        if l.minor > c.minor:
             return UpdateType.MINOR
         return UpdateType.PATCH

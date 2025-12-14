@@ -1,54 +1,42 @@
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
-from depup.core.models import DependencySpec
+from depup.core.models import DependencySpec, UpdateType
 from depup.core.version_scanner import VersionScanner
 
 
-def fake_pip_output(package: str):
-    return {
-        "requests": """requests (2.30.0)
-Available versions: 2.30.0, 2.29.0, 2.28.2
-""",
-        "numpy": """numpy (2.0.0)
-Available versions: 2.0.0, 1.26.0, 1.25.0
-""",
-        "pandas": """pandas (1.5.3)
-Available versions: 1.5.3, 1.5.2
-""",
-    }[package]
+def mock_pypi(version: str):
+    resp = Mock()
+    resp.status_code = 200
+    resp.json.return_value = {"info": {"version": version}}
+    return resp
 
 
-@patch("subprocess.run")
-def test_version_scanner_minor(mock_run):
-    mock_run.return_value.stdout = fake_pip_output("requests")
+@patch("depup.core.version_scanner.requests.get")
+def test_version_scanner_minor(mock_get):
+    mock_get.return_value = mock_pypi("2.30.0")
+
     dep = DependencySpec("requests", "==2.29.0", None)
-
-    scanner = VersionScanner()
-    result = scanner.scan([dep])[0]
+    result = VersionScanner().scan([dep])[0]
 
     assert result.latest == "2.30.0"
-    assert result.update_type == "minor"
+    assert result.update_type == UpdateType.MINOR
 
 
-@patch("subprocess.run")
-def test_version_scanner_patch(mock_run):
-    mock_run.return_value.stdout = fake_pip_output("pandas")
+@patch("depup.core.version_scanner.requests.get")
+def test_version_scanner_patch(mock_get):
+    mock_get.return_value = mock_pypi("1.5.3")
+
     dep = DependencySpec("pandas", "==1.5.2", None)
+    result = VersionScanner().scan([dep])[0]
 
-    scanner = VersionScanner()
-    result = scanner.scan([dep])[0]
-
-    assert result.latest == "1.5.3"
-    assert result.update_type == "patch"
+    assert result.update_type == UpdateType.PATCH
 
 
-@patch("subprocess.run")
-def test_version_scanner_major(mock_run):
-    mock_run.return_value.stdout = fake_pip_output("numpy")
+@patch("depup.core.version_scanner.requests.get")
+def test_version_scanner_major(mock_get):
+    mock_get.return_value = mock_pypi("2.0.0")
+
     dep = DependencySpec("numpy", "==1.26.0", None)
+    result = VersionScanner().scan([dep])[0]
 
-    scanner = VersionScanner()
-    result = scanner.scan([dep])[0]
-
-    assert result.latest == "2.0.0"
-    assert result.update_type == "major"
+    assert result.update_type == UpdateType.MAJOR

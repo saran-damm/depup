@@ -28,11 +28,11 @@ class DependencyParser:
     Entry point for parsing project dependency files.
     """
 
-    SUPPORTED_FILES: tuple[str, ...] = (
+    SUPPORTED_FILES: list[str] = [
         "requirements.txt",
         "pyproject.toml",
         "Pipfile",
-    )
+    ]
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root

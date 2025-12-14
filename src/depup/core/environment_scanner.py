@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import List
-
 from importlib import metadata
+from typing import List
 
 from depup.core.models import DependencySpec
 
@@ -16,29 +15,29 @@ class EnvironmentScanError(Exception):
 
 class EnvironmentScanner:
     """
-    Scans the currently active Python environment for installed packages.
+    Scans installed packages from the currently running Python environment.
 
-    Uses importlib.metadata to remain compatible with:
-    - uv
-    - poetry
-    - venv
-    - system Python
+    Uses importlib.metadata so this works with:
+      - uv venv (pip may be absent)
+      - venv
+      - poetry
+      - system python
     """
 
     def scan(self) -> List[DependencySpec]:
-        deps: List[DependencySpec] = []
-
         try:
-            distributions = metadata.distributions()
+            dists = metadata.distributions()
         except Exception as exc:
-            logger.error("Failed to read environment metadata: %s", exc)
+            logger.error("Failed to read installed distributions: %s", exc)
             raise EnvironmentScanError(
-                "Unable to inspect installed packages"
+                "Unable to inspect installed packages. "
+                "If this is a minimal environment, ensure site-packages metadata is available."
             ) from exc
 
-        for dist in distributions:
+        deps: List[DependencySpec] = []
+        for dist in dists:
             try:
-                name = dist.metadata["Name"]
+                name = dist.metadata.get("Name") or ""
                 version = dist.version
             except Exception:
                 continue
@@ -50,7 +49,7 @@ class EnvironmentScanner:
                 DependencySpec(
                     name=name.lower(),
                     version=version,
-                    source_file=None,  # environment has no source file
+                    source_file=None,
                 )
             )
 
