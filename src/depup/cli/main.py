@@ -1,31 +1,50 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from depup.utils.logging_config import configure_logging
+
 from depup.core.parsers.declaration_parser import DependencyParser
-from depup.core.version_scanner import VersionScanner, VersionScannerError
-from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
-from depup.core.environment_scanner import EnvironmentScanner
-from depup.core.models import VersionInfo, UpdateType
 from depup.core.parsers.poetry_lock_parser import PoetryLockParser
 from depup.core.parsers.pipfile_lock_parser import PipfileLockParser
-from depup.utils.report_utils import generate_markdown_report
 
-from depup.utils.render import *
-from depup.utils.upgrade_utils import *
-from depup.utils.scan_utils import *
+from depup.core.environment_scanner import EnvironmentScanner
+from depup.core.version_scanner import VersionScanner, VersionScannerError
+from depup.core.upgrade_executor import UpgradeExecutor, PlannedUpgrade
+from depup.core.models import VersionInfo, UpdateType
+
+from depup.utils.render import (
+    render_env_upgrade_table,
+    render_file_upgrade_table,
+    render_upgrade_summary,
+    render_latest_env_table,
+    render_env_table,
+    render_latest_file_table,
+    render_declared_file_table,
+)
+
+from depup.utils.upgrade_planner import build_upgrade_plans
+
+from depup.utils.scan_utils import _has_outdated, _convert_to_jsonable
+from depup.utils.upgrade_utils import (
+    _perform_env_upgrades,
+    select_upgradable_versions
+)
+from depup.utils.report_utils import generate_markdown_report
 
 app = typer.Typer(help="Dependency Upgrade Advisor CLI")
 console = Console()
 
 
-@app.callback()
+# ---------------------------------------------------------------------
+# GLOBAL CALLBACK
+# ---------------------------------------------------------------------
+@app.callback(invoke_without_command=True)
 def main_callback(
     verbose: bool = typer.Option(
         False,
@@ -34,7 +53,7 @@ def main_callback(
         help="Enable verbose logging",
     ),
 ) -> None:
-    """Main entry point."""
+    """Global CLI entrypoint."""
     configure_logging(verbose=verbose)
 
 
@@ -77,50 +96,31 @@ def scan_command(
     Scan dependency files or installed environment for outdated dependencies.
     """
 
-    # Enforce check requires latest
     if check and not latest:
         console.print("[red]--check requires --latest[/red]")
         raise typer.Exit(2)
 
-    # ---------------------------------------------------------
+    # =========================================================
     # ENVIRONMENT MODE
-    # ---------------------------------------------------------
+    # =========================================================
     if env:
         console.print("[blue]Scanning installed environment packages...[/blue]")
 
-        scanner = EnvironmentScanner()
-        deps = scanner.scan()
+        deps = EnvironmentScanner().scan()
 
         if not deps:
             console.print("[yellow]No installed packages detected.[/yellow]")
             raise typer.Exit(0)
 
-        if latest:
-            version_scanner = VersionScanner()
-            try:
-                infos = version_scanner.scan(deps)
-            except VersionScannerError as exc:
-                console.print(f"[red]Failed to scan versions: {exc}[/red]")
-                raise typer.Exit(1)
-        else:
-            infos = [
-                VersionInfo(
-                    name=d.name,
-                    current=d.version,
-                    latest=d.version,
-                    update_type=UpdateType.NONE,
-                )
-                for d in deps
-            ]
+        infos = _scan_versions(deps, latest)
 
-        # JSON OUTPUT
-        if json_output:
-            console.print_json(data=_convert_to_jsonable(deps, infos))
-        else:
-            if latest:
-                _render_latest_env_table(deps, infos)
-            else:
-                _render_env_table(deps)
+        _render_scan_output(
+            deps=deps,
+            infos=infos,
+            latest=latest,
+            json_output=json_output,
+            env=True,
+        )
 
         if report:
             generate_markdown_report(
@@ -131,32 +131,16 @@ def scan_command(
             )
             console.print(f"[green]Markdown report written to {report}[/green]")
 
-        # CHECK MODE
-        if check:
-            if _has_outdated(infos):
-                raise typer.Exit(1)
-            raise typer.Exit(0)
+        _exit_check_mode(infos, check)
 
-        raise typer.Exit(0)
-
-    # ---------------------------------------------------------
+    # =========================================================
     # FILE-BASED MODE
-    # ---------------------------------------------------------
+    # =========================================================
     project_root = path or Path.cwd()
-    parser = DependencyParser(project_root)
-    deps = parser.parse_all()
 
-    # Poetry lockfile (read-only)
-    poetry_parser = PoetryLockParser(project_root)
-    poetry_deps = poetry_parser.parse()
-    if poetry_deps:
-        deps.extend(poetry_deps)
-
-    # Pipfile.lock (read-only)
-    pipfile_parser = PipfileLockParser(project_root)
-    pipfile_deps = pipfile_parser.parse()
-    if pipfile_deps:
-        deps.extend(pipfile_deps)
+    deps = DependencyParser(project_root).parse_all()
+    deps.extend(PoetryLockParser(project_root).parse())
+    deps.extend(PipfileLockParser(project_root).parse())
 
     if not deps:
         console.print(
@@ -167,32 +151,15 @@ def scan_command(
         )
         raise typer.Exit(0)
 
-    if latest:
-        version_scanner = VersionScanner()
-        try:
-            infos = version_scanner.scan(deps)
-        except VersionScannerError as exc:
-            console.print(f"[red]Failed to scan versions: {exc}[/red]")
-            raise typer.Exit(1)
-    else:
-        infos = [
-            VersionInfo(
-                name=d.name,
-                current=d.version,
-                latest=d.version,
-                update_type=UpdateType.NONE,
-            )
-            for d in deps
-        ]
+    infos = _scan_versions(deps, latest)
 
-    # JSON OUTPUT
-    if json_output:
-        console.print_json(data=_convert_to_jsonable(deps, infos))
-    else:
-        if latest:
-            _render_latest_file_table(deps, infos)
-        else:
-            _render_declared_file_table(deps)
+    _render_scan_output(
+        deps=deps,
+        infos=infos,
+        latest=latest,
+        json_output=json_output,
+        env=False,
+    )
 
     if report:
         generate_markdown_report(
@@ -203,11 +170,7 @@ def scan_command(
         )
         console.print(f"[green]Markdown report written to {report}[/green]")
 
-    # CHECK MODE
-    if check:
-        if _has_outdated(infos):
-            raise typer.Exit(1)
-        raise typer.Exit(0)
+    _exit_check_mode(infos, check)
 
 
 # ---------------------------------------------------------------------
@@ -219,165 +182,110 @@ def upgrade_command(
         None,
         help="Project root directory (defaults to current working directory).",
     ),
-    only_patch: bool = typer.Option(False, "--only-patch", help="Upgrade only patch-level updates."),
-    only_minor: bool = typer.Option(False, "--only-minor", help="Upgrade only minor-level updates."),
-    only_major: bool = typer.Option(False, "--only-major", help="Upgrade only major-level updates."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show upgrades without applying them."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts."),
-    env: bool = typer.Option(False, "--env", help="Upgrade installed environment packages instead of project files."),
-    packages: Optional[List[str]] = typer.Argument(
-        None,
-        help="Optional list of package names to upgrade.",
-    ),
+    only_patch: bool = typer.Option(False, "--only-patch"),
+    only_minor: bool = typer.Option(False, "--only-minor"),
+    only_major: bool = typer.Option(False, "--only-major"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    yes: bool = typer.Option(False, "--yes", "-y"),
+    env: bool = typer.Option(False, "--env"),
+    packages: Optional[List[str]] = typer.Argument(None),
 ) -> None:
     """
     Upgrade outdated dependencies.
-
-    Supports:
-      - File-based upgrades
-      - Environment upgrades (--env)
     """
 
-    pkg_filter = {p.lower() for p in packages} if packages else None
+    pkg_filter: Optional[Set[str]] = {p.lower() for p in packages} if packages else None
 
     # =========================================================
     # ENVIRONMENT MODE
     # =========================================================
     if env:
-        console.print("[blue]Scanning installed environment packages...[/blue]")
+        deps = EnvironmentScanner().scan()
+        infos = VersionScanner().scan(deps)
 
-        env_scanner = EnvironmentScanner()
-        deps = env_scanner.scan()
+        selected = select_upgradable_versions(
+            infos,
+            pkg_filter,
+            only_patch,
+            only_minor,
+            only_major,
+        )
 
-        if not deps:
-            console.print("[yellow]No installed packages found.[/yellow]")
-            raise typer.Exit(0)
-
-        version_scanner = VersionScanner()
-        try:
-            infos = version_scanner.scan(deps)
-        except VersionScannerError as exc:
-            console.print(f"[red]Failed to scan versions: {exc}[/red]")
-            raise typer.Exit(1)
-
-        outdated = [
-            i
-            for i in infos
-            if i.update_type != UpdateType.NONE and (not pkg_filter or i.name.lower() in pkg_filter)
-        ]
-
-        if not outdated:
+        if not selected:
             console.print("[green]All environment packages are up to date![/green]")
             raise typer.Exit(0)
 
-        table = Table(title="Environment Upgrade Plan")
-        table.add_column("Package", style="cyan")
-        table.add_column("Current", style="green")
-        table.add_column("Latest", style="yellow")
-        table.add_column("Update Type", style="red")
+        render_env_upgrade_table(selected)
 
-        for i in outdated:
-            table.add_row(i.name, i.current, i.latest, i.update_type)
+        if not (yes or dry_run) and not typer.confirm("Proceed with upgrades?"):
+            raise typer.Exit(0)
 
-        console.print(table)
-
-        if not (yes or dry_run):
-            if not typer.confirm("Proceed with upgrading environment packages?"):
-                console.print("[yellow]Aborted.[/yellow]")
-                raise typer.Exit(0)
-
-        _perform_env_upgrades(outdated, dry_run=dry_run)
+        _perform_env_upgrades(selected, dry_run=dry_run)
         raise typer.Exit(0)
 
     # =========================================================
     # FILE-BASED MODE
     # =========================================================
     project_root = path or Path.cwd()
-    parser = DependencyParser(project_root)
-    deps = parser.parse_all()
+    deps = DependencyParser(project_root).parse_all()
 
-    if not deps:
-        console.print("[yellow]No dependency files found to upgrade.[/yellow]")
-        console.print("Try [cyan]depup upgrade --env[/cyan] to upgrade installed packages.")
+    infos = VersionScanner().scan(deps)
+
+    selected = select_upgradable_versions(
+        infos,
+        pkg_filter,
+        only_patch,
+        only_minor,
+        only_major,
+    )
+
+    if not selected:
+        console.print("[green]No matching upgrades found.[/green]")
         raise typer.Exit(0)
 
-    version_scanner = VersionScanner()
+    plans = build_upgrade_plans(selected, deps, project_root)
+    render_file_upgrade_table(plans, selected, dry_run)
+
+    if not (yes or dry_run) and not typer.confirm("Proceed with upgrades?"):
+        raise typer.Exit(0)
+
+    results = UpgradeExecutor(project_root, deps).execute(plans, dry_run=dry_run)
+    render_upgrade_summary(results)
+
+
+# ---------------------------------------------------------------------
+# INTERNAL HELPERS (CLI-SAFE)
+# ---------------------------------------------------------------------
+def _scan_versions(deps, latest: bool) -> List[VersionInfo]:
+    if not latest:
+        return [
+            VersionInfo(
+                name=d.name,
+                current=d.version,
+                latest=d.version,
+                update_type=UpdateType.NONE,
+            )
+            for d in deps
+        ]
     try:
-        infos = version_scanner.scan(deps)
+        return VersionScanner().scan(deps)
     except VersionScannerError as exc:
         console.print(f"[red]Failed to scan versions: {exc}[/red]")
         raise typer.Exit(1)
 
-    def selected(info: VersionInfo) -> bool:
-        if info.update_type == "none":
-            return False
-        if pkg_filter and info.name.lower() not in pkg_filter:
-            return False
-        if only_patch and info.update_type != "patch":
-            return False
-        if only_minor and info.update_type != "minor":
-            return False
-        if only_major and info.update_type != "major":
-            return False
-        return True
 
-    selected_infos = [i for i in infos if selected(i)]
+def _render_scan_output(*, deps, infos, latest, json_output, env: bool) -> None:
+    if json_output:
+        console.print_json(data=_convert_to_jsonable(deps, infos))
+        return
 
-    if not selected_infos:
-        console.print("[green]No matching upgrades found.[/green]")
-        raise typer.Exit(0)
+    if env:
+        render_latest_env_table(deps, infos) if latest else render_env_table(deps)
+    else:
+        render_latest_file_table(deps, infos) if latest else render_declared_file_table(deps)
 
-    plans: List[PlannedUpgrade] = []
-    for info in selected_infos:
-        dep_spec = next((d for d in deps if d.name.lower() == info.name.lower()), None)
-        source_file = dep_spec.source_file if dep_spec else project_root / "requirements.txt"
 
-        plans.append(
-            PlannedUpgrade(
-                name=info.name,
-                current_spec=info.current,
-                target_version=info.latest,
-                source_file=source_file,
-            )
-        )
-
-    table = Table(title="Planned Upgrades (dry-run)" if dry_run else "Planned Upgrades")
-    table.add_column("Package", style="cyan")
-    table.add_column("Current Spec", style="green")
-    table.add_column("Target Version", style="yellow")
-    table.add_column("Update Type", style="red")
-    table.add_column("Source File", style="magenta")
-
-    info_by_name = {i.name.lower(): i for i in selected_infos}
-
-    for plan in plans:
-        info = info_by_name.get(plan.name.lower())
-        table.add_row(
-            plan.name,
-            plan.current_spec or "",
-            plan.target_version,
-            info.update_type if info else "",
-            plan.source_file.name,
-        )
-
-    console.print(table)
-
-    if not dry_run and not yes:
-        if not typer.confirm("Proceed with these upgrades?"):
-            console.print("[yellow]Aborted.[/yellow]")
-            raise typer.Exit(0)
-
-    executor = UpgradeExecutor(project_root, deps)
-    results = executor.execute(plans, dry_run=dry_run)
-
-    succeeded = [r for r in results if r.success]
-    failed = [r for r in results if not r.success]
-
-    console.print()
-    console.print(
-        f"[green]Upgrades succeeded: {len(succeeded)}[/green], "
-        f"[red]failed: {len(failed)}[/red]"
-    )
-
-    for r in failed:
-        console.print(f"[red]- {r.name}: {r.error}[/red]")
+def _exit_check_mode(infos: List[VersionInfo], check: bool) -> None:
+    if check:
+        raise typer.Exit(1 if _has_outdated(infos) else 0)
+    raise typer.Exit(0)

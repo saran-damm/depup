@@ -53,8 +53,6 @@ class DependencyParser:
             if not file_path.exists():
                 continue
 
-            logger.info("Parsing dependency file: %s", file_path)
-
             parsed = self._parse_file(file_path)
             if parsed is None:
                 raise InvalidDependencyFileError(
